@@ -5,7 +5,7 @@ import numpy as np
 from datetime import datetime, date
 
 st.set_page_config(
-    page_title="Institutional Market Terminal & Trend Pullback Engine",
+    page_title="Institutional Quant Lab — Overhauled Engine",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -24,28 +24,11 @@ st.markdown("""
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
         height: 100%;
     }
-    .date-card {
-        background: rgba(2, 132, 199, 0.08);
-        border: 1px solid rgba(2, 132, 199, 0.25);
-        border-radius: 10px;
-        padding: 10px 14px;
-        margin-bottom: 14px;
-        font-size: 13px;
-        font-weight: 500;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
     @media (prefers-color-scheme: dark) {
         .metric-card {
             background: rgba(25, 30, 45, 0.45);
             border: 1px solid rgba(255, 255, 255, 0.08);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-        }
-        .date-card {
-            background: rgba(56, 189, 248, 0.08);
-            border: 1px solid rgba(56, 189, 248, 0.2);
-            color: #f3f4f6;
         }
     }
     .metric-label {
@@ -74,7 +57,7 @@ st.markdown("""
 if 'ticker_input' not in st.session_state:
     st.session_state.ticker_input = "QQQ"
 if 'horizon_input' not in st.session_state:
-    st.session_state.horizon_input = "3D"
+    st.session_state.horizon_input = "7D"
 
 @st.cache_data(ttl=120)
 def scarica_dati(ticker):
@@ -83,34 +66,47 @@ def scarica_dati(ticker):
         return None
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-    return df.dropna(subset=['Close'])
+    return df.dropna(subset=['Close', 'Volume'])
 
-def calcola_indicatori_strutturali(df):
+def calcola_indicatori_avanzati(df):
+    # Medie mobili di trend e pullback
     df['SMA50'] = df['Close'].rolling(window=50).mean()
     df['SMA200'] = df['Close'].rolling(window=200).mean()
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
 
+    # ATR per la volatilità
     tr1 = df['High'] - df['Low']
     tr2 = abs(df['High'] - df['Close'].shift())
     tr3 = abs(df['Low'] - df['Close'].shift())
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(window=14).mean()
 
+    # Filtro Volume Istituzionale (Media mobile volumi 20 sessioni)
+    df['Vol_SMA20'] = df['Volume'].rolling(window=20).mean()
+    
+    # Logica di Pullback con Conferma di Volume
     df['Trend_Bull'] = (df['Close'] > df['SMA50']) & (df['Close'] > df['SMA200'])
-    df['Pullback'] = (df['Close'].shift(1) < df['EMA20']) | (df['Close'].shift(2) < df['EMA20'])
-    df['Trigger_Buy'] = df['Trend_Bull'] & df['Pullback'] & (df['Close'] > df['Close'].shift(1))
+    df['Pullback'] = (df['Low'].shift(1) <= df['EMA20']) | (df['Low'].shift(2) <= df['EMA20'])
+    
+    # Trigger di acquisto: Trend rialzista + Pullback recente + Rimbalzo verde + Volumi superiori alla media
+    df['Trigger_Buy'] = (
+        df['Trend_Bull'] & 
+        df['Pullback'] & 
+        (df['Close'] > df['Close'].shift(1)) & 
+        (df['Volume'] > df['Vol_SMA20'] * 1.1)
+    )
 
     return df.dropna()
 
-st.subheader("⚡ Institutional Terminal — Trend Pullback Engine")
-st.write("Strategia deterministica a struttura di mercato ottimizzata per QQQ (Target: Obiettivo sostenibile con rischio 1%).")
+st.subheader("⚡ Institutional Quant Lab — Overhauled Engine (Volume-Weighted)")
+st.write("Versione avanzata con filtro di accumulo istituzionale e orizzonti estesi.")
 st.write("")
 
 c1, c2 = st.columns([2, 1])
 with c1:
-    st.session_state.ticker_input = st.text_input("Ticker (Default QQQ):", value=st.session_state.ticker_input).upper().strip()
+    st.session_state.ticker_input = st.text_input("Ticker di Riferimento:", value=st.session_state.ticker_input).upper().strip()
 with c2:
-    st.session_state.horizon_input = st.selectbox("Orizzonte di Uscita Max:", ["3D", "5D"], index=0)
+    st.session_state.horizon_input = st.selectbox("Orizzonte di Uscita Max:", ["3D", "5D", "7D"], index=2)
 
 p1, p2, p3, p4 = st.columns(4)
 with p1:
@@ -131,11 +127,11 @@ if ticker:
         st.error("Nessun dato trovato per il ticker inserito.")
         st.stop()
         
-    df = calcola_indicatori_strutturali(df_raw)
+    df = calcola_indicatori_avanzati(df_raw)
     
     st.write("")
-    st.subheader(f"📊 Backtest Strategia Pullback ({ticker}) | Periodo: {start_date_input} al {end_date_input}")
-    st.write(f"Parametri: Capitale **€{budget_iniziale:,.2f}** | Rischio **{risk_pct_chosen}%** | Rapporto R:R **1:2**")
+    st.subheader(f"📊 Backtest Avanzato ({ticker}) | Periodo: {start_date_input} al {end_date_input}")
+    st.write(f"Parametri: Capitale **€{budget_iniziale:,.2f}** | Rischio **{risk_pct_chosen}%** | R:R **1:2** | Orizzonte **{horizon}**")
 
     try:
         df_backtest = df.loc[str(start_date_input):str(end_date_input)].copy()
@@ -143,11 +139,12 @@ if ticker:
         df_backtest = df.copy()
 
     if df_backtest.empty:
-        st.warning("Il periodo selezionato non contiene dati sufficienti. Scegli un intervallo valido.")
+        st.warning("Il periodo selezionato non contiene dati sufficienti.")
         st.stop()
     
     simulated_trades = []
-    days_fwd = 3 if horizon == "3D" else 5
+    days_map = {"3D": 3, "5D": 5, "7D": 7}
+    days_fwd = days_map.get(horizon, 5)
 
     for i in range(len(df_backtest) - days_fwd):
         row_date = df_backtest.index[i]
@@ -218,7 +215,6 @@ if ticker:
         gross_profit = df_sim_results[df_sim_results['P&L (€)'] > 0]['P&L (€)'].sum()
         gross_loss = abs(df_sim_results[df_sim_results['P&L (€)'] < 0]['P&L (€)'].sum())
         
-        # Calcolo sicuro del Profit Factor senza errori di sintassi
         if gross_loss > 0:
             profit_factor = gross_profit / gross_loss
         else:
@@ -226,7 +222,6 @@ if ticker:
 
         df_sim_results['P&L (€)'] = df_sim_results['P&L (€)'].apply(lambda x: f"+€{x:.2f}" if x > 0 else f"-€{abs(x):.2f}")
 
-        # Dashboard KPI Istituzionale
         m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.markdown(f"""
@@ -264,4 +259,4 @@ if ticker:
         st.write("")
         st.dataframe(df_sim_results, use_container_width=True)
     else:
-        st.info("Nessun trade generato nel periodo con la strategia di pullback. Prova ad estendere l'intervallo temporale.")
+        st.info("Nessun trade generato con i nuovi filtri di volume istituzionale. Prova ad estendere il periodo.")
