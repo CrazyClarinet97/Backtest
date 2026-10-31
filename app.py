@@ -252,16 +252,23 @@ def calcola_modello_ml_e_backtest(df, sentiment_score, horizon):
 st.subheader("Trading Tikitò - Backtest Engine Avanzato")
 st.write("")
 
-# Controlli di input disposti su colonne pulite
-c1, c2, c3, c4 = st.columns([1.5, 1, 1, 1])
+# Riga 1: Ticker e Orizzonte
+c1, c2 = st.columns([2, 1])
 with c1:
     st.session_state.ticker_input = st.text_input("Ticker:", value=st.session_state.ticker_input).upper().strip()
 with c2:
     st.session_state.horizon_input = st.selectbox("Orizzonte:", ["1D", "3D", "7D"], index=["1D", "3D", "7D"].index(st.session_state.horizon_input))
-with c3:
+
+# Riga 2: Date, Capitale e Rischio personalizzabili
+p1, p2, p3, p4 = st.columns(4)
+with p1:
     start_date_input = st.date_input("Data Inizio:", value=date(2026, 8, 1))
-with c4:
+with p2:
     end_date_input = st.date_input("Data Fine:", value=date(2026, 10, 31))
+with p3:
+    budget_iniziale = st.number_input("Capitale Iniziale (€):", min_value=100.0, max_value=100000.0, value=2000.0, step=100.0)
+with p4:
+    risk_pct_chosen = st.number_input("Rischio Max per Trade (%):", min_value=0.1, max_value=10.0, value=1.0, step=0.1)
 
 ticker = st.session_state.ticker_input
 horizon = st.session_state.horizon_input
@@ -276,9 +283,8 @@ if ticker:
     
     st.write("")
     st.subheader(f"📊 Backtest Storico & Analisi ({ticker} - {horizon}) | Periodo: {start_date_input} al {end_date_input}")
-    st.write("Simulazione Walk-Forward giorno per giorno senza data leakage, applicando filtri ML, Macro e Position Sizing all'1%.")
+    st.write(f"Parametri simulazione: Capitale Iniziale **€{budget_iniziale:,.2f}** | Rischio per Trade **{risk_pct_chosen}%**.")
 
-    # Filtraggio dinamico basato sulle date scelte dall'utente
     try:
         df_backtest = df.loc[str(start_date_input):str(end_date_input)].copy()
     except Exception:
@@ -289,8 +295,6 @@ if ticker:
         st.stop()
     
     simulated_trades = []
-    budget_iniziale = 2000.0
-    risk_pct_chosen = 1.0
     days_fwd = 1 if horizon == "1D" else (3 if horizon == "3D" else 7)
 
     for i in range(len(df_backtest) - days_fwd):
@@ -365,10 +369,9 @@ if ticker:
         gross_loss = abs(df_sim_results[df_sim_results['P&L (€)'] < 0]['P&L (€)'].sum())
         profit_factor = gross_profit / gross_loss if gross_loss > 0 else np.nan
 
-        # Formattazione P&L in euro per la tabella
         df_sim_results['P&L (€)'] = df_sim_results['P&L (€)'].apply(lambda x: f"+€{x:.2f}" if x > 0 else f"-€{abs(x):.2f}")
 
-        # KPI Dashboard
+        # Dashboard KPI
         m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.markdown(f"""
@@ -406,4 +409,4 @@ if ticker:
         st.write("")
         st.dataframe(df_sim_results, use_container_width=True)
     else:
-        st.info("Nessun trade generato nel periodo o con i parametri selezionati. Prova ad ampliare l'intervallo di date.")
+        st.info("Nessun trade generato nel periodo o con i parametri selezionati. Prova ad ampliare l'intervallo di date o cambiare ticker.")
