@@ -8,6 +8,7 @@ import requests
 from textblob import TextBlob
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
+from datetime import datetime, date
 
 st.set_page_config(
     page_title="Institutional Market Terminal & Backtest Engine",
@@ -110,7 +111,7 @@ def get_dynamic_benchmark(ticker):
 
 @st.cache_data(ttl=120)
 def scarica_dati(ticker):
-    df = yf.download(ticker, period="2y", interval="1d", progress=False)
+    df = yf.download(ticker, period="3y", interval="1d", progress=False)
     if df.empty:
         return None
     if isinstance(df.columns, pd.MultiIndex):
@@ -118,7 +119,7 @@ def scarica_dati(ticker):
     df = df.dropna(subset=['Close'])
     
     bench_ticker = get_dynamic_benchmark(ticker)
-    df_bench = yf.download(bench_ticker, period="2y", interval="1d", progress=False)
+    df_bench = yf.download(bench_ticker, period="3y", interval="1d", progress=False)
     if not df_bench.empty:
         if isinstance(df_bench.columns, pd.MultiIndex):
             df_bench.columns = df_bench.columns.get_level_values(0)
@@ -251,11 +252,16 @@ def calcola_modello_ml_e_backtest(df, sentiment_score, horizon):
 st.subheader("Trading Tikitò - Backtest Engine Avanzato")
 st.write("")
 
-c1, c2 = st.columns([2, 1])
+# Controlli di input disposti su colonne pulite
+c1, c2, c3, c4 = st.columns([1.5, 1, 1, 1])
 with c1:
-    st.session_state.ticker_input = st.text_input("Inserisci Ticker (es. SXLK.MI, AAPL, NVDA):", value=st.session_state.ticker_input).upper().strip()
+    st.session_state.ticker_input = st.text_input("Ticker:", value=st.session_state.ticker_input).upper().strip()
 with c2:
     st.session_state.horizon_input = st.selectbox("Orizzonte:", ["1D", "3D", "7D"], index=["1D", "3D", "7D"].index(st.session_state.horizon_input))
+with c3:
+    start_date_input = st.date_input("Data Inizio:", value=date(2026, 8, 1))
+with c4:
+    end_date_input = st.date_input("Data Fine:", value=date(2026, 10, 31))
 
 ticker = st.session_state.ticker_input
 horizon = st.session_state.horizon_input
@@ -269,10 +275,18 @@ if ticker:
     df = calcola_indicatori(df_raw)
     
     st.write("")
-    st.subheader(f"📊 Backtest Storico & Analisi di Performance ({ticker} - {horizon})")
-    st.write("Simulazione rigorosa giorno per giorno (senza data leakage) su base trimestrale (Agosto - Ottobre 2026).")
+    st.subheader(f"📊 Backtest Storico & Analisi ({ticker} - {horizon}) | Periodo: {start_date_input} al {end_date_input}")
+    st.write("Simulazione Walk-Forward giorno per giorno senza data leakage, applicando filtri ML, Macro e Position Sizing all'1%.")
 
-    df_backtest = df.loc['2026-08-01':].copy()
+    # Filtraggio dinamico basato sulle date scelte dall'utente
+    try:
+        df_backtest = df.loc[str(start_date_input):str(end_date_input)].copy()
+    except Exception:
+        df_backtest = df.copy()
+
+    if df_backtest.empty:
+        st.warning("Il periodo selezionato non contiene dati sufficienti o il mercato era chiuso. Scegli un intervallo valido.")
+        st.stop()
     
     simulated_trades = []
     budget_iniziale = 2000.0
@@ -351,10 +365,10 @@ if ticker:
         gross_loss = abs(df_sim_results[df_sim_results['P&L (€)'] < 0]['P&L (€)'].sum())
         profit_factor = gross_profit / gross_loss if gross_loss > 0 else np.nan
 
-        # Formattazione P&L per la tabella finale
+        # Formattazione P&L in euro per la tabella
         df_sim_results['P&L (€)'] = df_sim_results['P&L (€)'].apply(lambda x: f"+€{x:.2f}" if x > 0 else f"-€{abs(x):.2f}")
 
-        # Visualizzazione Metriche Avanzate
+        # KPI Dashboard
         m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.markdown(f"""
@@ -369,7 +383,7 @@ if ticker:
                 <div class="metric-card">
                     <div class="metric-label">Profit Factor</div>
                     <div class="metric-val" style="color: #38bdf8;">{profit_factor:.2f}</div>
-                    <div class="metric-sub">Lordo Profitti / Perdite</div>
+                    <div class="metric-sub">Profitti / Perdite Lorde</div>
                 </div>
             """, unsafe_allow_html=True)
         with m3:
@@ -377,7 +391,7 @@ if ticker:
                 <div class="metric-card">
                     <div class="metric-label">P&L Netto Totale</div>
                     <div class="metric-val" style="color: {'#238636' if total_pnl >= 0 else '#da3633'};">+€{total_pnl:.2f}</div>
-                    <div class="metric-sub">Rendimento: {(total_pnl/budget_iniziale)*100:+.2f}%</div>
+                    <div class="metric-sub">Rend: {(total_pnl/budget_iniziale)*100:+.2f}%</div>
                 </div>
             """, unsafe_allow_html=True)
         with m4:
@@ -392,4 +406,4 @@ if ticker:
         st.write("")
         st.dataframe(df_sim_results, use_container_width=True)
     else:
-        st.info("Nessun trade generato con i filtri attuali nel periodo selezionato per questo ticker.")
+        st.info("Nessun trade generato nel periodo o con i parametri selezionati. Prova ad ampliare l'intervallo di date.")
