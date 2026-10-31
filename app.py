@@ -252,14 +252,12 @@ def calcola_modello_ml_e_backtest(df, sentiment_score, horizon):
 st.subheader("Trading Tikitò - Backtest Engine Avanzato")
 st.write("")
 
-# Riga 1: Ticker e Orizzonte
 c1, c2 = st.columns([2, 1])
 with c1:
     st.session_state.ticker_input = st.text_input("Ticker:", value=st.session_state.ticker_input).upper().strip()
 with c2:
     st.session_state.horizon_input = st.selectbox("Orizzonte:", ["1D", "3D", "7D"], index=["1D", "3D", "7D"].index(st.session_state.horizon_input))
 
-# Riga 2: Date, Capitale e Rischio personalizzabili
 p1, p2, p3, p4 = st.columns(4)
 with p1:
     start_date_input = st.date_input("Data Inizio:", value=date(2026, 8, 1))
@@ -324,16 +322,19 @@ if ticker:
             
             outcome = "PENDING"
             exit_price = future_window['Close'].iloc[-1]
+            exit_date = future_window.index[-1].strftime('%Y-%m-%d')
             pnl_eur = 0.0
             
-            for _, f_row in future_window.iterrows():
+            for f_date, f_row in future_window.iterrows():
                 if f_row['Low'] <= sl_target:
                     outcome = "LOSS"
                     exit_price = sl_target
+                    exit_date = f_date.strftime('%Y-%m-%d')
                     break
                 elif f_row['High'] >= tp_target:
                     outcome = "WIN"
                     exit_price = tp_target
+                    exit_date = f_date.strftime('%Y-%m-%d')
                     break
             
             if outcome == "PENDING":
@@ -343,13 +344,15 @@ if ticker:
             
             simulated_trades.append({
                 "Data Ingresso": row_date.strftime('%Y-%m-%d'),
+                "Data Uscita": exit_date,
                 "Ticker": ticker,
                 "Prob ML": f"{p_val:.1f}%",
                 "Azioni": shares,
-                "Investito (€)": f"€{invested_eur:,.2f}",
-                "Prezzo Ing.": f"€{entry_price:.2f}",
-                "Stop Loss": f"€{sl_target:.2f}",
-                "Take Profit": f"€{tp_target:.2f}",
+                "Capitale Investito (€)": f"€{invested_eur:,.2f}",
+                "Prezzo Ingresso (€)": f"€{entry_price:.2f}",
+                "Stop Loss (€)": f"€{sl_target:.2f}",
+                "Take Profit (€)": f"€{tp_target:.2f}",
+                "Prezzo Uscita (€)": f"€{exit_price:.2f}",
                 "Esito": outcome,
                 "P&L (€)": pnl_eur
             })
