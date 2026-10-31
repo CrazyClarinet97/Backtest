@@ -279,7 +279,8 @@ if ticker:
     st.subheader(f"Backtest Automatico (Agosto - Ottobre 2026) su {ticker}")
     st.write("Il motore simula l'operatività passata giorno per giorno applicando filtri ML, Macro e Position Sizing all'1% su un capitale ipotetico di 2.000€.")
 
-    df_backtest = df.loc['2026-08-01:'].copy()
+    # CORRETTO: I due punti ora sono fuori dalle virgolette per lo slicing di Pandas
+    df_backtest = df.loc['2026-08-01':].copy()
     
     simulated_trades = []
     budget_iniziale = 2000.0
