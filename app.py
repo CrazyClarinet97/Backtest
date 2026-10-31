@@ -5,7 +5,7 @@ import numpy as np
 from datetime import datetime, date
 
 st.set_page_config(
-    page_title="Institutional Quant Lab — Overhauled Engine",
+    page_title="Institutional Quant Lab — Dynamic Volatility Engine",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -55,9 +55,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if 'ticker_input' not in st.session_state:
-    st.session_state.ticker_input = "QQQ"
+    st.session_state.ticker_input = "SXLK.MI"
 if 'horizon_input' not in st.session_state:
-    st.session_state.horizon_input = "7D"
+    st.session_state.horizon_input = "3D"
 
 @st.cache_data(ttl=120)
 def scarica_dati(ticker):
@@ -69,26 +69,21 @@ def scarica_dati(ticker):
     return df.dropna(subset=['Close', 'Volume'])
 
 def calcola_indicatori_avanzati(df):
-    # Medie mobili di trend e pullback
     df['SMA50'] = df['Close'].rolling(window=50).mean()
     df['SMA200'] = df['Close'].rolling(window=200).mean()
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
 
-    # ATR per la volatilità
     tr1 = df['High'] - df['Low']
     tr2 = abs(df['High'] - df['Close'].shift())
     tr3 = abs(df['Low'] - df['Close'].shift())
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(window=14).mean()
 
-    # Filtro Volume Istituzionale (Media mobile volumi 20 sessioni)
     df['Vol_SMA20'] = df['Volume'].rolling(window=20).mean()
     
-    # Logica di Pullback con Conferma di Volume
     df['Trend_Bull'] = (df['Close'] > df['SMA50']) & (df['Close'] > df['SMA200'])
     df['Pullback'] = (df['Low'].shift(1) <= df['EMA20']) | (df['Low'].shift(2) <= df['EMA20'])
     
-    # Trigger di acquisto: Trend rialzista + Pullback recente + Rimbalzo verde + Volumi superiori alla media
     df['Trigger_Buy'] = (
         df['Trend_Bull'] & 
         df['Pullback'] & 
@@ -98,15 +93,15 @@ def calcola_indicatori_avanzati(df):
 
     return df.dropna()
 
-st.subheader("⚡ Institutional Quant Lab — Overhauled Engine (Volume-Weighted)")
-st.write("Versione avanzata con filtro di accumulo istituzionale e orizzonti estesi.")
+st.subheader("⚡ Institutional Quant Lab — Dynamic Volatility & Root-Time Scaling")
+st.write("Modello con adattamento geometrico del Take Profit basato sulla radice quadrata del tempo.")
 st.write("")
 
 c1, c2 = st.columns([2, 1])
 with c1:
     st.session_state.ticker_input = st.text_input("Ticker di Riferimento:", value=st.session_state.ticker_input).upper().strip()
 with c2:
-    st.session_state.horizon_input = st.selectbox("Orizzonte di Uscita Max:", ["3D", "5D", "7D"], index=2)
+    st.session_state.horizon_input = st.selectbox("Orizzonte di Uscita Max:", ["3D", "5D", "7D"], index=0)
 
 p1, p2, p3, p4 = st.columns(4)
 with p1:
@@ -116,7 +111,7 @@ with p2:
 with p3:
     budget_iniziale = st.number_input("Capitale Iniziale (€):", min_value=100.0, max_value=100000.0, value=2000.0, step=100.0)
 with p4:
-    risk_pct_chosen = st.number_input("Rischio Max per Trade (%):", min_value=0.1, max_value=10.0, value=1.0, step=0.1)
+    risk_pct_chosen = st.number_input("Rischio Max per Trade (%):", min_value=0.1, max_value=10.0, value=2.0, step=0.1)
 
 ticker = st.session_state.ticker_input
 horizon = st.session_state.horizon_input
@@ -130,7 +125,7 @@ if ticker:
     df = calcola_indicatori_avanzati(df_raw)
     
     st.write("")
-    st.subheader(f"📊 Backtest Avanzato ({ticker}) | Periodo: {start_date_input} al {end_date_input}")
+    st.subheader(f"📊 Backtest Dinamico ({ticker}) | Periodo: {start_date_input} al {end_date_input}")
     st.write(f"Parametri: Capitale **€{budget_iniziale:,.2f}** | Rischio **{risk_pct_chosen}%** | R:R **1:2** | Orizzonte **{horizon}**")
 
     try:
@@ -144,7 +139,10 @@ if ticker:
     
     simulated_trades = []
     days_map = {"3D": 3, "5D": 5, "7D": 7}
-    days_fwd = days_map.get(horizon, 5)
+    days_fwd = days_map.get(horizon, 3)
+    
+    # Fattore di scala dinamico basato sulla radice quadrata del tempo (Random Walk Theory)
+    time_scaling_factor = np.sqrt(days_fwd / 3.0)
 
     for i in range(len(df_backtest) - days_fwd):
         row_date = df_backtest.index[i]
@@ -153,11 +151,14 @@ if ticker:
             entry_price = df_backtest['Close'].iloc[i]
             entry_atr = df_backtest['ATR'].iloc[i]
             
-            sl_target = entry_price - (entry_atr * 1.5)
-            tp_target = entry_price + (entry_atr * 1.5 * 2.0)
+            # SL e TP scalati dinamicamente in base all'orizzonte temporale scelto
+            sl_dist = entry_atr * 1.5 * time_scaling_factor
+            tp_dist = sl_dist * 2.0  # Rapporto R:R 1:2 geometrico
+            
+            sl_target = entry_price - sl_dist
+            tp_target = entry_price + tp_dist
             
             max_loss_eur = budget_iniziale * (risk_pct_chosen / 100.0)
-            sl_dist = abs(entry_price - sl_target)
             shares = int(max_loss_eur / sl_dist) if sl_dist > 0 else 0
             invested_eur = shares * entry_price
             
@@ -182,6 +183,7 @@ if ticker:
                     exit_date = f_date.strftime('%Y-%m-%d')
                     break
             
+            # Se scade il tempo senza toccare né TP né SL, valuta rigorosamente l'esito reale a fine periodo
             if outcome == "PENDING":
                 outcome = "WIN" if exit_price > entry_price else "LOSS"
                 
@@ -259,4 +261,4 @@ if ticker:
         st.write("")
         st.dataframe(df_sim_results, use_container_width=True)
     else:
-        st.info("Nessun trade generato con i nuovi filtri di volume istituzionale. Prova ad estendere il periodo.")
+        st.info("Nessun trade generato con i nuovi parametri dinamici.")
