@@ -248,12 +248,12 @@ def calcola_modello_ml_e_backtest(df, sentiment_score, horizon):
 
     return prob, verdetto, colore, sl_val, sl_pct, tp_val, tp_pct, risk_reward, win_rate, is_macro_bull
 
-st.subheader("Trading Tikitò - Backtest Engine Storico")
+st.subheader("Trading Tikitò - Backtest Engine Avanzato")
 st.write("")
 
 c1, c2 = st.columns([2, 1])
 with c1:
-    st.session_state.ticker_input = st.text_input("Ticker:", value=st.session_state.ticker_input).upper().strip()
+    st.session_state.ticker_input = st.text_input("Inserisci Ticker (es. SXLK.MI, AAPL, NVDA):", value=st.session_state.ticker_input).upper().strip()
 with c2:
     st.session_state.horizon_input = st.selectbox("Orizzonte:", ["1D", "3D", "7D"], index=["1D", "3D", "7D"].index(st.session_state.horizon_input))
 
@@ -263,29 +263,20 @@ horizon = st.session_state.horizon_input
 if ticker:
     df_raw = scarica_dati(ticker)
     if df_raw is None or df_raw.empty:
-        st.error("Nessun dato trovato.")
+        st.error("Nessun dato trovato per il ticker inserito.")
         st.stop()
         
     df = calcola_indicatori(df_raw)
     
-    avg_sentiment, articoli = estrai_news_e_sentiment(ticker)
-    prob, verdetto, colore, sl_val, sl_pct, tp_val, tp_pct, risk_reward, win_rate, is_macro_bull = calcola_modello_ml_e_backtest(df, avg_sentiment, horizon)
-    
-    last_price = df['Close'].iloc[-1]
-    last_date = df.index[-1].strftime('%Y-%m-%d')
-    change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[-2]) / df['Close'].iloc[-2]) * 100
-
     st.write("")
-    st.subheader(f"Backtest Automatico (Agosto - Ottobre 2026) su {ticker}")
-    st.write("Il motore simula l'operatività passata giorno per giorno applicando filtri ML, Macro e Position Sizing all'1% su un capitale ipotetico di 2.000€.")
+    st.subheader(f"📊 Backtest Storico & Analisi di Performance ({ticker} - {horizon})")
+    st.write("Simulazione rigorosa giorno per giorno (senza data leakage) su base trimestrale (Agosto - Ottobre 2026).")
 
-    # CORRETTO: I due punti ora sono fuori dalle virgolette per lo slicing di Pandas
     df_backtest = df.loc['2026-08-01':].copy()
     
     simulated_trades = []
     budget_iniziale = 2000.0
     risk_pct_chosen = 1.0
-    
     days_fwd = 1 if horizon == "1D" else (3 if horizon == "3D" else 7)
 
     for i in range(len(df_backtest) - days_fwd):
@@ -342,7 +333,7 @@ if ticker:
                 "Stop Loss": f"€{sl_target:.2f}",
                 "Take Profit": f"€{tp_target:.2f}",
                 "Esito": outcome,
-                "P&L (€)": f"+€{pnl_eur:.2f}" if pnl_eur > 0 else f"-€{abs(pnl_eur):.2f}"
+                "P&L (€)": pnl_eur
             })
 
     if simulated_trades:
@@ -350,22 +341,55 @@ if ticker:
         
         total_trades = len(df_sim_results)
         wins = len(df_sim_results[df_sim_results['Esito'] == 'WIN'])
+        losses = len(df_sim_results[df_sim_results['Esito'] == 'LOSS'])
         win_rate_real = (wins / total_trades) * 100 if total_trades > 0 else 0
         
-        st.markdown(f"""
-            <div class="flow-card" style="border-left: 5px solid #238636; margin-bottom: 15px;">
-                <div>
-                    <b>📊 Report Sintetico Backtest ({ticker} - {horizon}):</b><br>
-                    • Totale Operazioni Simulate: <b>{total_trades}</b><br>
-                    • Operazioni Vincenti (WIN): <b>{wins}</b> ({win_rate_real:.1f}%)
-                </div>
-                <div style="text-align: right;">
-                    <span style="font-size: 10px; opacity: 0.7; text-transform: uppercase; display: block;">Stato Engine</span>
-                    <b style="color: #238636;">VALIDATO CON SUCCESSO</b>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+        total_pnl = df_sim_results['P&L (€)'].sum()
+        final_budget = budget_iniziale + total_pnl
         
+        gross_profit = df_sim_results[df_sim_results['P&L (€)'] > 0]['P&L (€)'].sum()
+        gross_loss = abs(df_sim_results[df_sim_results['P&L (€)'] < 0]['P&L (€)'].sum())
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else np.nan
+
+        # Formattazione P&L per la tabella finale
+        df_sim_results['P&L (€)'] = df_sim_results['P&L (€)'].apply(lambda x: f"+€{x:.2f}" if x > 0 else f"-€{abs(x):.2f}")
+
+        # Visualizzazione Metriche Avanzate
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">Win Rate Reale</div>
+                    <div class="metric-val" style="color: #238636;">{win_rate_real:.1f}%</div>
+                    <div class="metric-sub">{wins} Win su {total_trades} Trade</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with m2:
+            st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">Profit Factor</div>
+                    <div class="metric-val" style="color: #38bdf8;">{profit_factor:.2f}</div>
+                    <div class="metric-sub">Lordo Profitti / Perdite</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with m3:
+            st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">P&L Netto Totale</div>
+                    <div class="metric-val" style="color: {'#238636' if total_pnl >= 0 else '#da3633'};">+€{total_pnl:.2f}</div>
+                    <div class="metric-sub">Rendimento: {(total_pnl/budget_iniziale)*100:+.2f}%</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with m4:
+            st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">Capitale Finale</div>
+                    <div class="metric-val">€{final_budget:,.2f}</div>
+                    <div class="metric-sub">Start: €{budget_iniziale:,.2f}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        st.write("")
         st.dataframe(df_sim_results, use_container_width=True)
     else:
-        st.info("Nessun trade generato con i rigidi filtri attuali nel periodo selezionato. Prova ad allargare l'orizzonte o cambiare ticker.")
+        st.info("Nessun trade generato con i filtri attuali nel periodo selezionato per questo ticker.")
