@@ -9,7 +9,7 @@ from textblob import TextBlob
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
 
-Configurazione Pagina
+# Configurazione Pagina
 st.set_page_config(
 page_title="Institutional Market Terminal & Backtest Engine",
 page_icon="⚡",
