@@ -86,21 +86,16 @@ def scarica_dati(ticker):
     return df.dropna(subset=['Close'])
 
 def calcola_indicatori_strutturali(df):
-    # Medie mobili per il trend primario e pullback
     df['SMA50'] = df['Close'].rolling(window=50).mean()
     df['SMA200'] = df['Close'].rolling(window=200).mean()
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
 
-    # Average True Range (ATR) per la volatilità e gestione rischio
     tr1 = df['High'] - df['Low']
     tr2 = abs(df['High'] - df['Close'].shift())
     tr3 = abs(df['Low'] - df['Close'].shift())
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(window=14).mean()
 
-    # Logica di Pullback Sano in Trend Rialzista:
-    # 1. Trend primario rialzista (Prezzo > SMA200 e SMA50)
-    # 2. Pullback: il prezzo ha chiuso sotto la EMA20 negli ultimi 2 giorni ma ora accenna a ripartire
     df['Trend_Bull'] = (df['Close'] > df['SMA50']) & (df['Close'] > df['SMA200'])
     df['Pullback'] = (df['Close'].shift(1) < df['EMA20']) | (df['Close'].shift(2) < df['EMA20'])
     df['Trigger_Buy'] = df['Trend_Bull'] & df['Pullback'] & (df['Close'] > df['Close'].shift(1))
@@ -111,7 +106,6 @@ st.subheader("⚡ Institutional Terminal — Trend Pullback Engine")
 st.write("Strategia deterministica a struttura di mercato ottimizzata per QQQ (Target: Obiettivo sostenibile con rischio 1%).")
 st.write("")
 
-# Controlli di input flessibili
 c1, c2 = st.columns([2, 1])
 with c1:
     st.session_state.ticker_input = st.text_input("Ticker (Default QQQ):", value=st.session_state.ticker_input).upper().strip()
@@ -158,14 +152,12 @@ if ticker:
     for i in range(len(df_backtest) - days_fwd):
         row_date = df_backtest.index[i]
         
-        # Se scatta il trigger di acquisto basato sul pullback nel trend
         if df_backtest['Trigger_Buy'].iloc[i]:
             entry_price = df_backtest['Close'].iloc[i]
             entry_atr = df_backtest['ATR'].iloc[i]
             
-            # Stop loss sotto il minimo recente (basato su ATR) e Take Profit con R:R 1:2
             sl_target = entry_price - (entry_atr * 1.5)
-            tp_target = entry_price + (entry_atr * 1.5 * 2.0)  # Rapporto 1:2
+            tp_target = entry_price + (entry_atr * 1.5 * 2.0)
             
             max_loss_eur = budget_iniziale * (risk_pct_chosen / 100.0)
             sl_dist = abs(entry_price - sl_target)
@@ -225,7 +217,12 @@ if ticker:
         
         gross_profit = df_sim_results[df_sim_results['P&L (€)'] > 0]['P&L (€)'].sum()
         gross_loss = abs(df_sim_results[df_sim_results['P&L (€)'] < 0]['P&L (€)'].sum())
-        profit_factor = gross_profit / gross_loss if gross_loss > 0 else np.nan
+        
+        # Calcolo sicuro del Profit Factor senza errori di sintassi
+        if gross_loss > 0:
+            profit_factor = gross_profit / gross_loss
+        else:
+            profit_factor = 99.0 if gross_profit > 0 else 0.0
 
         df_sim_results['P&L (€)'] = df_sim_results['P&L (€)'].apply(lambda x: f"+€{x:.2f}" if x > 0 else f"-€{abs(x):.2f}")
 
@@ -243,7 +240,7 @@ if ticker:
             st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-label">Profit Factor</div>
-                    <div class="metric-val" style="color: #38bdf8;">{profit_factor:.2f if not np.isnan(profit_factor) else 0.0}</div>
+                    <div class="metric-val" style="color: #38bdf8;">{profit_factor:.2f}</div>
                     <div class="metric-sub">Target: > 1.40</div>
                 </div>
             """, unsafe_allow_html=True)
